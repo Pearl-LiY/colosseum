@@ -1,18 +1,24 @@
 import React from 'react';
-import { StrategyMetric } from '../types';
+import { StrategyMetric, AssetClass } from '../types';
 import { Trophy } from 'lucide-react';
 import { DashboardCard } from './DashboardCard';
-import { AreaChart, Area, ResponsiveContainer } from 'recharts';
+import { AreaChart, Area, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { LiveTicker } from './LiveTicker';
 
 interface CompetitionBoardProps {
   strategies: StrategyMetric[];
-  historyData: Record<string, any[]>;
+  assetClass: AssetClass;
 }
 
-export const CompetitionBoard: React.FC<CompetitionBoardProps> = ({ strategies, historyData }) => {
-  // Sort strategies by Total PnL Pips
-  const sortedStrategies = [...strategies].sort((a, b) => b.totalPnlPips - a.totalPnlPips);
+export const CompetitionBoard: React.FC<CompetitionBoardProps> = ({ strategies, assetClass }) => {
+  // Sort strategies by Total PnL (Pips for Spot, USD for Option)
+  const sortedStrategies = [...strategies].sort((a, b) => {
+    if (assetClass === 'SPOT') return (b.totalPnlPips || 0) - (a.totalPnlPips || 0);
+    return b.totalPnlUsd - a.totalPnlUsd;
+  });
+
+  const getPnlValue = (s: StrategyMetric) => assetClass === 'SPOT' ? s.totalPnlPips : s.totalPnlUsd;
+  const pnlLabel = assetClass === 'SPOT' ? 'Pips' : 'USD';
 
   return (
     <div className="h-full flex flex-col gap-4">
@@ -40,8 +46,9 @@ export const CompetitionBoard: React.FC<CompetitionBoardProps> = ({ strategies, 
               <div className="mt-4">
                  <div className="text-xs text-gray-500 uppercase">Total PnL</div>
                  <div className="text-2xl font-mono font-bold text-white">
-                   <LiveTicker value={strat.totalPnlPips} format={(v) => v.toFixed(0)} />
-                   <span className="text-sm text-gray-500 ml-1">Pips</span>
+                   {assetClass === 'OPTION' && '$'}
+                   <LiveTicker value={getPnlValue(strat) || 0} format={(v) => v.toLocaleString(undefined, {maximumFractionDigits: 0})} />
+                   <span className="text-sm text-gray-500 ml-1">{pnlLabel}</span>
                  </div>
               </div>
               <div className="mt-2 flex gap-4 text-xs">
@@ -60,11 +67,11 @@ export const CompetitionBoard: React.FC<CompetitionBoardProps> = ({ strategies, 
               <tr>
                 <th className="px-6 py-4">Rank</th>
                 <th className="px-6 py-4">Strategy</th>
-                <th className="px-6 py-4 text-right">Total PnL (Pips)</th>
+                <th className="px-6 py-4 text-right">Total PnL ({pnlLabel})</th>
                 <th className="px-6 py-4 text-right">Sharpe Ratio</th>
                 <th className="px-6 py-4 text-right">Max DD</th>
                 <th className="px-6 py-4 text-right">Status</th>
-                <th className="px-6 py-4 w-48">Mini Chart</th>
+                <th className="px-6 py-4 w-48">Mini Chart ({assetClass === 'SPOT' ? 'Equity' : 'Greeks'})</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-800/50">
@@ -76,7 +83,8 @@ export const CompetitionBoard: React.FC<CompetitionBoardProps> = ({ strategies, 
                     {strat.name}
                   </td>
                   <td className={`px-6 py-4 text-right font-mono font-bold`}>
-                    <LiveTicker value={strat.totalPnlPips} format={(v) => `${v > 0 ? '+' : ''}${v.toFixed(1)}`} colored />
+                     {assetClass === 'OPTION' && '$'}
+                    <LiveTicker value={getPnlValue(strat) || 0} format={(v) => `${v > 0 ? '+' : ''}${v.toLocaleString(undefined, {maximumFractionDigits: 1})}`} colored />
                   </td>
                   <td className="px-6 py-4 text-right font-mono text-gray-300">{strat.sharpeRatio.toFixed(2)}</td>
                   <td className="px-6 py-4 text-right font-mono text-rose-400">-{strat.maxDrawdown.toFixed(2)}%</td>
@@ -88,9 +96,18 @@ export const CompetitionBoard: React.FC<CompetitionBoardProps> = ({ strategies, 
                   <td className="px-6 py-2">
                      <div className="h-10 w-32 ml-auto">
                         <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={historyData[strat.id] || []}>
-                            <Area type="monotone" dataKey="value" stroke={strat.color} fill="none" strokeWidth={2} isAnimationActive={false} />
-                          </AreaChart>
+                          {assetClass === 'SPOT' ? (
+                            <AreaChart data={strat.equityCurve}>
+                              <Area type="monotone" dataKey="value" stroke={strat.color} fill="none" strokeWidth={2} isAnimationActive={false} />
+                            </AreaChart>
+                          ) : (
+                             // Option: 3 lines for Greeks
+                            <LineChart data={strat.deltaCurve}>
+                              <Line type="monotone" dataKey="value" stroke="#3b82f6" dot={false} strokeWidth={1} isAnimationActive={false} />
+                              <Line type="monotone" dataKey="value" stroke="#f59e0b" dot={false} strokeWidth={1} strokeDasharray="2 2" isAnimationActive={false} />
+                              <Line type="monotone" dataKey="value" stroke="#ec4899" dot={false} strokeWidth={1} strokeOpacity={0.5} isAnimationActive={false} />
+                            </LineChart>
+                          )}
                         </ResponsiveContainer>
                      </div>
                   </td>
